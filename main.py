@@ -18,83 +18,62 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 # ─────────────────────────────────────────────────────────────
 # Tunable cleanup constants
 # ─────────────────────────────────────────────────────────────
-SAVE_DELETE_DELAY   = 1 * 60     # sec  — delete X sec after user saves the file
-UNCLAIMED_TTL       = 5 * 60     # sec  — delete if "done" but never saved within 5 min
-ERROR_TTL           = 2 * 60     # sec  — delete partial files from failed jobs after 2 min
-SWEEP_INTERVAL      = 60         # sec  — how often the watcher thread runs
-# ─────────────────────────────────────────────────────────────
+SAVE_DELETE_DELAY = 1 * 60     # sec — delete after user saves
+UNCLAIMED_TTL     = 5 * 60     # sec — delete if done but never saved
+ERROR_TTL         = 2 * 60     # sec — delete partial files from failed jobs
+SWEEP_INTERVAL    = 60         # sec — watcher frequency
 
 jobs: Dict[str, dict] = {}
-_lock = threading.Lock()          # guards jobs dict for cross-thread safety
+_lock = threading.Lock()
 
 
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────
 
-def human_size(n_bytes: int) -> str:
+def human_size(n: int) -> str:
     for unit in ("B", "KB", "MB", "GB"):
-        if n_bytes < 1024:
-            return f"{n_bytes:.1f} {unit}"
-        n_bytes /= 1024
-    return f"{n_bytes:.1f} TB"
+        if n < 1024:
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TB"
 
 
 def _purge_job(job_id: str) -> None:
-    """Delete the job's folder from disk and remove it from the in-memory store."""
-    folder = os.path.join(DOWNLOAD_DIR, job_id)
-    shutil.rmtree(folder, ignore_errors=True)
+    shutil.rmtree(os.path.join(DOWNLOAD_DIR, job_id), ignore_errors=True)
     with _lock:
         jobs.pop(job_id, None)
 
 
 # ─────────────────────────────────────────────────────────────
-# Background watcher  (runs every SWEEP_INTERVAL seconds)
-# Handles two "abandoned" cases:
-#   1. Job is "done" but user never clicked Save  → UNCLAIMED_TTL
-#   2. Job errored out, leaving partial files     → ERROR_TTL
-#   3. Orphan folders on disk not in jobs{}       → sweep on startup + every interval
+# Background watcher
 # ─────────────────────────────────────────────────────────────
 
-def _watcher():
-    # Startup sweep: clean leftover folders from a previous server run
-    _sweep_orphan_folders()
-
-    while True:
-        time.sleep(SWEEP_INTERVAL)
-        now = time.time()
-
-        with _lock:
-            snapshot = list(jobs.items())
-
-        for job_id, job in snapshot:
-            status    = job.get("status")
-            marked_at = job.get("_marked_at", now)
-
-            # Case 1 — done but never saved
-            if status == "done" and (now - marked_at) > UNCLAIMED_TTL:
-                _purge_job(job_id)
-
-            # Case 2 — errored, clean up partial files
-            elif status == "error" and (now - marked_at) > ERROR_TTL:
-                _purge_job(job_id)
-
-        # Case 3 — orphan folders whose job was lost (e.g. process restart mid-sweep)
-        _sweep_orphan_folders()
-
-
 def _sweep_orphan_folders():
-    """Remove any folder inside downloads/ that has no matching job record."""
     try:
         for name in os.listdir(DOWNLOAD_DIR):
             folder = os.path.join(DOWNLOAD_DIR, name)
-            if not os.path.isdir(folder):
-                continue
-            # Only remove if there is no live job tracking it
-            if name not in jobs:
+            if os.path.isdir(folder) and name not in jobs:
                 shutil.rmtree(folder, ignore_errors=True)
     except Exception:
         pass
+
+
+def _watcher():
+    _sweep_orphan_folders()
+    while True:
+        time.sleep(SWEEP_INTERVAL)
+        now = time.time()
+        with _lock:
+            snapshot = list(jobs.items())
+        for job_id, job in snapshot:
+            status    = job.get("status")
+            marked_at = job.get("_marked_at", now)
+            if status == "done"  and (now - marked_at) > UNCLAIMED_TTL:
+                _purge_job(job_id)
+            elif status == "error" and (now - marked_at) > ERROR_TTL:
+                _purge_job(job_id)
+        _sweep_orphan_folders()
 
 
 threading.Thread(target=_watcher, daemon=True).start()
@@ -113,24 +92,16 @@ async def home(request: Request):
 async def start_download(request: Request):
     form = await request.form()
     url  = str(form.get("url", "")).strip()
-
     if not url:
         return JSONResponse({"error": "No URL provided"}, status_code=400)
 
     job_id = str(uuid.uuid4())
     with _lock:
         jobs[job_id] = {
-            "status":     "queued",
-            "progress":   0,
-            "speed":      "",
-            "eta":        "",
-            "filename":   None,
-            "filepath":   None,
-            "title":      "",
-            "thumbnail":  "",
-            "filesize":   "",
-            "error":      None,
-            "_marked_at": time.time(),   # used by watcher for TTL checks
+            "status": "queued", "progress": 0, "speed": "", "eta": "",
+            "filename": None, "filepath": None, "title": "",
+            "thumbnail": "", "filesize": "", "error": None,
+            "_marked_at": time.time(),
         }
 
     threading.Thread(target=download_video, args=(job_id, url), daemon=True).start()
@@ -143,17 +114,13 @@ async def get_status(job_id: str):
         job = jobs.get(job_id)
     if job is None:
         return JSONResponse({"status": "not_found"}, status_code=404)
-
-    # Strip internal fields before sending to client
-    public = {k: v for k, v in job.items() if not k.startswith("_")}
-    return JSONResponse(public)
+    return JSONResponse({k: v for k, v in job.items() if not k.startswith("_")})
 
 
 @app.get("/file/{job_id}")
 async def serve_file(job_id: str):
     with _lock:
         job = jobs.get(job_id)
-
     if not job or not job.get("filepath"):
         return JSONResponse({"error": "File not found"}, status_code=404)
 
@@ -166,8 +133,6 @@ async def serve_file(job_id: str):
     ext        = os.path.splitext(path)[1]
     dl_name    = f"{safe_title}{ext}" if safe_title else os.path.basename(path)
 
-    # Mark job as "served" so the watcher ignores it from UNCLAIMED logic,
-    # then delete SAVE_DELETE_DELAY seconds later (browser finishes downloading)
     with _lock:
         jobs[job_id]["status"]     = "served"
         jobs[job_id]["_marked_at"] = time.time()
@@ -177,13 +142,23 @@ async def serve_file(job_id: str):
         _purge_job(job_id)
 
     threading.Thread(target=_delete_after_save, daemon=True).start()
-
     return FileResponse(path, filename=dl_name, media_type="application/octet-stream")
 
 
 # ─────────────────────────────────────────────────────────────
-# Download worker  (background thread)
+# Download worker
 # ─────────────────────────────────────────────────────────────
+
+# Browser-like headers so datacenter IPs aren't immediately blocked
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 
 def download_video(job_id: str, url: str):
     with _lock:
@@ -198,10 +173,9 @@ def download_video(job_id: str, url: str):
             pct        = int(downloaded / total * 100) if total else 0
             with _lock:
                 jobs[job_id].update({
-                    "status":   "downloading",
-                    "progress": pct,
-                    "speed":    d.get("_speed_str", "").strip(),
-                    "eta":      d.get("_eta_str",   "").strip(),
+                    "status": "downloading", "progress": pct,
+                    "speed":  d.get("_speed_str", "").strip(),
+                    "eta":    d.get("_eta_str",   "").strip(),
                 })
                 if total:
                     jobs[job_id]["filesize"] = human_size(total)
@@ -217,43 +191,63 @@ def download_video(job_id: str, url: str):
     job_dir = os.path.join(DOWNLOAD_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
 
-    ydl_opts = {
-        "outtmpl":             os.path.join(job_dir, "%(title).80s.%(ext)s"),
-        "format":              "bestvideo+bestaudio/best",
+    # ── Shared base options ───────────────────────────────────
+    _base = {
+        "outtmpl":           os.path.join(job_dir, "%(title).80s.%(ext)s"),
         "merge_output_format": "mp4",
-        "noplaylist":          True,
-        "quiet":               True,
-        "no_warnings":         True,
-        "writesubtitles":      False,
-        "subtitleslangs":      ["en"],
-        "writeautomaticsub":   False,
-        "writethumbnail":      False,
-        "retries":             5,
-        "fragment_retries":    5,
-        "ignoreerrors":        True,
-        "restrictfilenames":   True,
-        "overwrites":          False,
-        "progress_hooks":      [progress_hook],
+        "noplaylist":        True,
+        "quiet":             True,
+        "no_warnings":       True,
+        "writesubtitles":    False,
+        "subtitleslangs":    ["en"],
+        "writeautomaticsub": False,
+        "writethumbnail":    False,
+        "retries":           5,
+        "fragment_retries":  5,
+        "restrictfilenames": True,
+        "overwrites":        False,
+        "http_headers":      _HEADERS,
+    }
+
+    # Phase 1: metadata fetch — strict (ignoreerrors=False) so we get the real error
+    _info_opts = {**_base, "ignoreerrors": False, "format": "best"}
+
+    # Phase 2: actual download — permissive + progress hook + best quality
+    _dl_opts = {
+        **_base,
+        "format":         "bestvideo+bestaudio/best",
+        "ignoreerrors":   True,
+        "progress_hooks": [progress_hook],
     }
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # Step 1: fetch metadata
+        with yt_dlp.YoutubeDL(_info_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            if info is None:
-                raise ValueError("Could not extract video info. The URL may be private or unsupported.")
-            if info.get("_type") == "playlist":
-                entries = [e for e in (info.get("entries") or []) if e]
-                if not entries:
-                    raise ValueError("Playlist is empty or all entries failed.")
-                info = entries[0]
 
-            with _lock:
-                jobs[job_id]["title"]     = info.get("title",     "video")
-                jobs[job_id]["thumbnail"] = info.get("thumbnail", "")
-                jobs[job_id]["status"]    = "downloading"
+        if info is None:
+            raise ValueError(
+                "yt-dlp returned no info — the URL may be private, "
+                "geo-blocked, or unsupported."
+            )
 
+        # Unwrap playlist-wrapped singles (YouTube Shorts, etc.)
+        if info.get("_type") == "playlist":
+            entries = [e for e in (info.get("entries") or []) if e]
+            if not entries:
+                raise ValueError("Playlist is empty or all entries failed.")
+            info = entries[0]
+
+        with _lock:
+            jobs[job_id]["title"]     = info.get("title",     "video")
+            jobs[job_id]["thumbnail"] = info.get("thumbnail", "")
+            jobs[job_id]["status"]    = "downloading"
+
+        # Step 2: download
+        with yt_dlp.YoutubeDL(_dl_opts) as ydl:
             ydl.download([url])
 
+        # Step 3: locate output file
         found = final_filepath[0] if final_filepath else None
         if not found or not os.path.exists(found):
             candidates = [
@@ -273,11 +267,16 @@ def download_video(job_id: str, url: str):
                 "filesize":   human_size(os.path.getsize(found)),
                 "status":     "done",
                 "progress":   100,
-                "_marked_at": time.time(),   # start the UNCLAIMED_TTL clock
+                "_marked_at": time.time(),
             })
 
     except Exception as exc:
+        # Clean up partial files immediately on any failure
+        shutil.rmtree(os.path.join(DOWNLOAD_DIR, job_id), ignore_errors=True)
         with _lock:
-            jobs[job_id]["status"]     = "error"
-            jobs[job_id]["error"]      = str(exc)
-            jobs[job_id]["_marked_at"] = time.time()   # start ERROR_TTL clock
+            jobs[job_id].update({
+                "status":     "error",
+                "error":      str(exc),
+                "progress":   0,
+                "_marked_at": time.time(),
+            })
