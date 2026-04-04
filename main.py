@@ -236,10 +236,11 @@ def download_video(job_id: str, url: str):
         "restrictfilenames":   True,
         "overwrites":          False,
         "http_headers":        _HEADERS,
-        # YouTube bot-check bypass options
+        # Use iOS + tv_embedded clients — these bypass YouTube's bot-check
+        # on datacenter IPs without needing cookies or sign-in
         "extractor_args": {
             "youtube": {
-                "player_client": ["web", "ios"],   # try web first, fall back to ios
+                "player_client": ["ios", "tv_embedded", "mweb"],
             }
         },
         **_cookies_opts(),   # inject cookiefile if available
