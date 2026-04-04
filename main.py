@@ -247,8 +247,12 @@ def download_video(job_id: str, url: str):
     }
 
     _info_opts = {**_base, "ignoreerrors": False, "format": "best"}
-    _dl_opts   = {**_base, "format": "bestvideo+bestaudio/best",
-                  "ignoreerrors": True, "progress_hooks": [progress_hook]}
+    _dl_opts   = {**_base,
+                  # bestvideo+bestaudio for clients with separate streams (tv_embedded/mweb)
+                  # /best fallback for ios client which only serves pre-merged video+audio
+                  "format":       "bestvideo+bestaudio/best",
+                  "ignoreerrors": True,
+                  "progress_hooks": [progress_hook]}
 
     try:
         with yt_dlp.YoutubeDL(_info_opts) as ydl:
