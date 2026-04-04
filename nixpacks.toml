@@ -1,8 +1,4 @@
+# Let nixpacks auto-detect Python from requirements.txt (it sets up venv + pip itself)
+# Only override to add ffmpeg which it won't install automatically
 [phases.setup]
-nixPkgs = ["ffmpeg", "python312", "python312Packages.pip"]
-
-[phases.install]
-cmds = ["python3 -m pip install -r requirements.txt"]
-
-[start]
-cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+nixPkgs = ["ffmpeg"]
