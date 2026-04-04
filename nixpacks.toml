@@ -1,9 +1,12 @@
-# Installs ffmpeg system package (required by yt-dlp for merging video+audio)
 [phases.setup]
-nixPkgs = ["ffmpeg", "python312"]
+packages = ["python312", "ffmpeg"]  # keep what you need
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+commands = [
+    "python3 -m ensurepip --upgrade",  # <-- install pip
+    "python3 -m pip install --upgrade pip",
+    "python3 -m pip install -r requirements.txt"
+]
 
-[start]
-cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+[phases.start]
+command = "uvicorn main:app --host 0.0.0.0 --port $PORT"
