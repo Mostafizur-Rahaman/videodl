@@ -14,27 +14,51 @@ app = FastAPI(title="VideoDL")
 templates = Jinja2Templates(directory="templates")
 
 DOWNLOAD_DIR = "downloads"
-COOKIES_FILE  = "youtube_cookies.txt"   # written from env var at startup
+COOKIES_FILE = "youtube_cookies.txt"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────
-# Cookies bootstrap
-# Set YOUTUBE_COOKIES in Railway Variables as the raw Netscape
-# cookies.txt content (or base64-encoded — both supported).
+# Cookies bootstrap — reads YOUTUBE_COOKIES env var (Railway Variable)
+# Value can be raw Netscape cookies.txt content OR base64-encoded
 # ─────────────────────────────────────────────────────────────
+
+_COOKIES_STATUS = {"loaded": False, "lines": 0, "size": 0, "error": ""}
 
 def _bootstrap_cookies() -> None:
     raw = os.environ.get("YOUTUBE_COOKIES", "").strip()
     if not raw:
+        _COOKIES_STATUS["error"] = "YOUTUBE_COOKIES env var not set"
         return
-    # Support both plain-text and base64-encoded values
     try:
         decoded = base64.b64decode(raw).decode("utf-8")
     except Exception:
-        decoded = raw
+        decoded = raw   # not base64, use as-is
+
+    # Validate it looks like Netscape cookie format
+    lines = [l for l in decoded.splitlines() if l.strip()]
+    has_header = any("Netscape" in l or l.startswith("#") for l in lines[:3])
+    cookie_lines = [l for l in lines if not l.startswith("#") and "\t" in l]
+
+    if not cookie_lines:
+        _COOKIES_STATUS["error"] = (
+            "Cookies file has no valid Netscape entries (tab-separated rows). "
+            "Make sure you exported from a LOGGED-IN YouTube session."
+        )
+        return
+
     with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+        if not has_header:
+            f.write("# Netscape HTTP Cookie File\n")
         f.write(decoded)
-    print(f"[VideoDL] cookies written → {COOKIES_FILE}")
+
+    _COOKIES_STATUS.update({
+        "loaded": True,
+        "lines":  len(cookie_lines),
+        "size":   os.path.getsize(COOKIES_FILE),
+        "error":  "",
+    })
+    print(f"[VideoDL] ✓ cookies loaded — {len(cookie_lines)} entries, "
+          f"{_COOKIES_STATUS['size']} bytes")
 
 _bootstrap_cookies()
 
@@ -70,8 +94,7 @@ def _purge_job(job_id: str) -> None:
 
 
 def _cookies_opts() -> dict:
-    """Return cookiefile option only if the file exists and is non-empty."""
-    if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
+    if _COOKIES_STATUS["loaded"] and os.path.exists(COOKIES_FILE):
         return {"cookiefile": COOKIES_FILE}
     return {}
 
@@ -117,6 +140,16 @@ threading.Thread(target=_watcher, daemon=True).start()
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
+
+
+# ── Debug endpoint — visit /cookies-status to verify cookies ──
+@app.get("/cookies-status")
+async def cookies_status():
+    return JSONResponse({
+        "cookies_file": COOKIES_FILE,
+        "status":       _COOKIES_STATUS,
+        "yt_dlp_version": yt_dlp.version.__version__,
+    })
 
 
 @app.post("/start-download")
@@ -236,22 +269,21 @@ def download_video(job_id: str, url: str):
         "restrictfilenames":   True,
         "overwrites":          False,
         "http_headers":        _HEADERS,
-        # Use iOS + tv_embedded clients — these bypass YouTube's bot-check
-        # on datacenter IPs without needing cookies or sign-in
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "tv_embedded", "mweb"],
+                # tv_embedded + mweb support separate streams (bestvideo+bestaudio)
+                # ios is pre-merged but never triggers bot-check
+                # web_creator sometimes works with cookies on fresh IPs
+                "player_client": ["tv_embedded", "mweb", "ios"],
             }
         },
-        **_cookies_opts(),   # inject cookiefile if available
+        **_cookies_opts(),
     }
 
     _info_opts = {**_base, "ignoreerrors": False, "format": "best"}
     _dl_opts   = {**_base,
-                  # bestvideo+bestaudio for clients with separate streams (tv_embedded/mweb)
-                  # /best fallback for ios client which only serves pre-merged video+audio
-                  "format":       "bestvideo+bestaudio/best",
-                  "ignoreerrors": True,
+                  "format":         "bestvideo+bestaudio/best",
+                  "ignoreerrors":   True,
                   "progress_hooks": [progress_hook]}
 
     try:
