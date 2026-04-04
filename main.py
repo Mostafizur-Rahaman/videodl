@@ -1,0 +1,283 @@
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+import yt_dlp
+import uuid
+import os
+import shutil
+import time
+from typing import Dict
+import threading
+
+app = FastAPI(title="VideoDL")
+templates = Jinja2Templates(directory="templates")
+
+DOWNLOAD_DIR = "downloads"
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+# ─────────────────────────────────────────────────────────────
+# Tunable cleanup constants
+# ─────────────────────────────────────────────────────────────
+SAVE_DELETE_DELAY   = 1 * 60     # sec  — delete X sec after user saves the file
+UNCLAIMED_TTL       = 5 * 60     # sec  — delete if "done" but never saved within 5 min
+ERROR_TTL           = 2 * 60     # sec  — delete partial files from failed jobs after 2 min
+SWEEP_INTERVAL      = 60         # sec  — how often the watcher thread runs
+# ─────────────────────────────────────────────────────────────
+
+jobs: Dict[str, dict] = {}
+_lock = threading.Lock()          # guards jobs dict for cross-thread safety
+
+
+# ─────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────
+
+def human_size(n_bytes: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n_bytes < 1024:
+            return f"{n_bytes:.1f} {unit}"
+        n_bytes /= 1024
+    return f"{n_bytes:.1f} TB"
+
+
+def _purge_job(job_id: str) -> None:
+    """Delete the job's folder from disk and remove it from the in-memory store."""
+    folder = os.path.join(DOWNLOAD_DIR, job_id)
+    shutil.rmtree(folder, ignore_errors=True)
+    with _lock:
+        jobs.pop(job_id, None)
+
+
+# ─────────────────────────────────────────────────────────────
+# Background watcher  (runs every SWEEP_INTERVAL seconds)
+# Handles two "abandoned" cases:
+#   1. Job is "done" but user never clicked Save  → UNCLAIMED_TTL
+#   2. Job errored out, leaving partial files     → ERROR_TTL
+#   3. Orphan folders on disk not in jobs{}       → sweep on startup + every interval
+# ─────────────────────────────────────────────────────────────
+
+def _watcher():
+    # Startup sweep: clean leftover folders from a previous server run
+    _sweep_orphan_folders()
+
+    while True:
+        time.sleep(SWEEP_INTERVAL)
+        now = time.time()
+
+        with _lock:
+            snapshot = list(jobs.items())
+
+        for job_id, job in snapshot:
+            status    = job.get("status")
+            marked_at = job.get("_marked_at", now)
+
+            # Case 1 — done but never saved
+            if status == "done" and (now - marked_at) > UNCLAIMED_TTL:
+                _purge_job(job_id)
+
+            # Case 2 — errored, clean up partial files
+            elif status == "error" and (now - marked_at) > ERROR_TTL:
+                _purge_job(job_id)
+
+        # Case 3 — orphan folders whose job was lost (e.g. process restart mid-sweep)
+        _sweep_orphan_folders()
+
+
+def _sweep_orphan_folders():
+    """Remove any folder inside downloads/ that has no matching job record."""
+    try:
+        for name in os.listdir(DOWNLOAD_DIR):
+            folder = os.path.join(DOWNLOAD_DIR, name)
+            if not os.path.isdir(folder):
+                continue
+            # Only remove if there is no live job tracking it
+            if name not in jobs:
+                shutil.rmtree(folder, ignore_errors=True)
+    except Exception:
+        pass
+
+
+threading.Thread(target=_watcher, daemon=True).start()
+
+
+# ─────────────────────────────────────────────────────────────
+# Routes
+# ─────────────────────────────────────────────────────────────
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse(request=request, name="index.html")
+
+
+@app.post("/start-download")
+async def start_download(request: Request):
+    form = await request.form()
+    url  = str(form.get("url", "")).strip()
+
+    if not url:
+        return JSONResponse({"error": "No URL provided"}, status_code=400)
+
+    job_id = str(uuid.uuid4())
+    with _lock:
+        jobs[job_id] = {
+            "status":     "queued",
+            "progress":   0,
+            "speed":      "",
+            "eta":        "",
+            "filename":   None,
+            "filepath":   None,
+            "title":      "",
+            "thumbnail":  "",
+            "filesize":   "",
+            "error":      None,
+            "_marked_at": time.time(),   # used by watcher for TTL checks
+        }
+
+    threading.Thread(target=download_video, args=(job_id, url), daemon=True).start()
+    return JSONResponse({"job_id": job_id})
+
+
+@app.get("/status/{job_id}")
+async def get_status(job_id: str):
+    with _lock:
+        job = jobs.get(job_id)
+    if job is None:
+        return JSONResponse({"status": "not_found"}, status_code=404)
+
+    # Strip internal fields before sending to client
+    public = {k: v for k, v in job.items() if not k.startswith("_")}
+    return JSONResponse(public)
+
+
+@app.get("/file/{job_id}")
+async def serve_file(job_id: str):
+    with _lock:
+        job = jobs.get(job_id)
+
+    if not job or not job.get("filepath"):
+        return JSONResponse({"error": "File not found"}, status_code=404)
+
+    path = job["filepath"]
+    if not os.path.exists(path):
+        return JSONResponse({"error": "File already deleted or missing"}, status_code=404)
+
+    title      = job.get("title", "video")
+    safe_title = "".join(c for c in title if c.isalnum() or c in " ._-")[:80].strip()
+    ext        = os.path.splitext(path)[1]
+    dl_name    = f"{safe_title}{ext}" if safe_title else os.path.basename(path)
+
+    # Mark job as "served" so the watcher ignores it from UNCLAIMED logic,
+    # then delete SAVE_DELETE_DELAY seconds later (browser finishes downloading)
+    with _lock:
+        jobs[job_id]["status"]     = "served"
+        jobs[job_id]["_marked_at"] = time.time()
+
+    def _delete_after_save():
+        time.sleep(SAVE_DELETE_DELAY)
+        _purge_job(job_id)
+
+    threading.Thread(target=_delete_after_save, daemon=True).start()
+
+    return FileResponse(path, filename=dl_name, media_type="application/octet-stream")
+
+
+# ─────────────────────────────────────────────────────────────
+# Download worker  (background thread)
+# ─────────────────────────────────────────────────────────────
+
+def download_video(job_id: str, url: str):
+    with _lock:
+        jobs[job_id]["status"] = "fetching_info"
+
+    final_filepath: list[str] = []
+
+    def progress_hook(d):
+        if d["status"] == "downloading":
+            total      = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            downloaded = d.get("downloaded_bytes", 0)
+            pct        = int(downloaded / total * 100) if total else 0
+            with _lock:
+                jobs[job_id].update({
+                    "status":   "downloading",
+                    "progress": pct,
+                    "speed":    d.get("_speed_str", "").strip(),
+                    "eta":      d.get("_eta_str",   "").strip(),
+                })
+                if total:
+                    jobs[job_id]["filesize"] = human_size(total)
+        elif d["status"] == "finished":
+            fpath = d.get("filename", "")
+            if fpath and os.path.exists(fpath):
+                final_filepath.clear()
+                final_filepath.append(fpath)
+            with _lock:
+                jobs[job_id]["status"]   = "processing"
+                jobs[job_id]["progress"] = 100
+
+    job_dir = os.path.join(DOWNLOAD_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+
+    ydl_opts = {
+        "outtmpl":             os.path.join(job_dir, "%(title).80s.%(ext)s"),
+        "format":              "bestvideo+bestaudio/best",
+        "merge_output_format": "mp4",
+        "noplaylist":          True,
+        "quiet":               True,
+        "no_warnings":         True,
+        "writesubtitles":      False,
+        "subtitleslangs":      ["en"],
+        "writeautomaticsub":   False,
+        "writethumbnail":      False,
+        "retries":             5,
+        "fragment_retries":    5,
+        "ignoreerrors":        True,
+        "restrictfilenames":   True,
+        "overwrites":          False,
+        "progress_hooks":      [progress_hook],
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if info is None:
+                raise ValueError("Could not extract video info. The URL may be private or unsupported.")
+            if info.get("_type") == "playlist":
+                entries = [e for e in (info.get("entries") or []) if e]
+                if not entries:
+                    raise ValueError("Playlist is empty or all entries failed.")
+                info = entries[0]
+
+            with _lock:
+                jobs[job_id]["title"]     = info.get("title",     "video")
+                jobs[job_id]["thumbnail"] = info.get("thumbnail", "")
+                jobs[job_id]["status"]    = "downloading"
+
+            ydl.download([url])
+
+        found = final_filepath[0] if final_filepath else None
+        if not found or not os.path.exists(found):
+            candidates = [
+                os.path.join(job_dir, f) for f in os.listdir(job_dir)
+                if not f.endswith((".part", ".ytdl", ".json"))
+            ]
+            if candidates:
+                found = max(candidates, key=os.path.getsize)
+
+        if not found or not os.path.exists(found):
+            raise FileNotFoundError("Download finished but output file could not be located.")
+
+        with _lock:
+            jobs[job_id].update({
+                "filename":   os.path.basename(found),
+                "filepath":   found,
+                "filesize":   human_size(os.path.getsize(found)),
+                "status":     "done",
+                "progress":   100,
+                "_marked_at": time.time(),   # start the UNCLAIMED_TTL clock
+            })
+
+    except Exception as exc:
+        with _lock:
+            jobs[job_id]["status"]     = "error"
+            jobs[job_id]["error"]      = str(exc)
+            jobs[job_id]["_marked_at"] = time.time()   # start ERROR_TTL clock
