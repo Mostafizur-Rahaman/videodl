@@ -4,36 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VideoDL | Smart Video Downloader</title>
-
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
 <style>
-/* ── CSS Variables ─────────────────────────────────────────── */
 :root {
     --primary:      #16a34a;
     --primary-dark: #15803d;
     --primary-glow: rgba(22,163,74,0.18);
-    --accent:       #2563eb;
-    --bg:           #f5f7fb;
-    --card-bg:      #ffffff;
-    --text:         #111827;
-    --muted:        #6b7280;
-    --border:       #e5e7eb;
+    --bg:           #0f172a;
+    --card-bg:      #111827;
+    --text:         #e5e7eb;
+    --muted:        #9ca3af;
+    --border:       #1f2937;
     --radius:       14px;
 }
-
-body.dark {
-    --bg:       #0f172a;
-    --card-bg:  #111827;
-    --text:     #e5e7eb;
-    --muted:    #9ca3af;
-    --border:   #1f2937;
-}
-
-/* ── Reset ─────────────────────────────────────────────────── */
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-
 body {
     font-family: 'Inter', sans-serif;
     background: var(--bg);
@@ -41,10 +26,7 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
-    transition: background .3s, color .3s;
 }
-
-/* ── Header ─────────────────────────────────────────────────── */
 header {
     background: var(--card-bg);
     border-bottom: 1px solid var(--border);
@@ -52,501 +34,267 @@ header {
     display: flex;
     align-items: center;
     justify-content: center;
-    position: relative;
-    transition: background .3s;
 }
-
-.logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: -.3px;
-}
-.logo i { color: var(--primary); font-size: 20px; }
-
-.theme-btn {
-    position: absolute;
-    right: 20px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    width: 40px; height: 40px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--text);
-    transition: transform .25s, background .3s;
-}
-.theme-btn:hover { transform: scale(1.12); }
-
-/* ── Main wrapper ────────────────────────────────────────────── */
+.logo { display:flex; align-items:center; gap:10px; font-size:18px; font-weight:700; }
+.logo i { color: var(--primary); }
 .wrapper {
-    flex: 1;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 40px 20px 20px;
+    flex:1; display:flex; align-items:flex-start;
+    justify-content:center; padding:40px 20px 20px;
 }
-
-.container { width: 100%; max-width: 780px; }
-
-/* ── Hero card ───────────────────────────────────────────────── */
+.container { width:100%; max-width:780px; }
 .card {
     background: var(--card-bg);
     border-radius: 20px;
     padding: 40px 36px 32px;
-    box-shadow: 0 24px 80px rgba(0,0,0,.08);
+    box-shadow: 0 24px 80px rgba(0,0,0,.2);
     text-align: center;
-    transition: background .3s;
 }
-
 .card h1 {
-    font-size: 32px;
-    font-weight: 800;
-    letter-spacing: -.5px;
-    margin-bottom: 6px;
+    font-size:32px; font-weight:800; letter-spacing:-.5px; margin-bottom:6px;
     background: linear-gradient(135deg, var(--primary), #059669);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
 }
-
-.subtitle {
-    color: var(--muted);
-    font-size: 14.5px;
-    margin-bottom: 28px;
-}
-
-/* ── Input row ───────────────────────────────────────────────── */
+.subtitle { color:var(--muted); font-size:14.5px; margin-bottom:28px; }
 .input-row {
-    display: flex;
-    border: 2px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-    transition: border-color .25s, box-shadow .25s;
+    display:flex; border:2px solid var(--border); border-radius:var(--radius);
+    overflow:hidden; transition:border-color .25s, box-shadow .25s;
 }
 .input-row:focus-within {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 4px var(--primary-glow);
+    border-color:var(--primary);
+    box-shadow:0 0 0 4px var(--primary-glow);
 }
-
 .input-row input {
-    flex: 1;
-    padding: 15px 18px;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 14.5px;
-    color: var(--text);
+    flex:1; padding:15px 18px; border:none; outline:none;
+    background:transparent; font-size:14.5px; color:var(--text);
 }
-.input-row input::placeholder { color: var(--muted); }
-
+.input-row input::placeholder { color:var(--muted); }
 .btn-fetch {
-    padding: 15px 26px;
-    border: none;
-    background: var(--primary);
-    color: #fff;
-    font-weight: 700;
-    font-size: 14.5px;
-    cursor: pointer;
-    transition: background .2s;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    padding:15px 26px; border:none; background:var(--primary);
+    color:#fff; font-weight:700; font-size:14.5px; cursor:pointer;
+    transition:background .2s; white-space:nowrap;
+    display:flex; align-items:center; gap:8px;
 }
-.btn-fetch:hover { background: var(--primary-dark); }
-.btn-fetch:disabled { opacity: .6; cursor: not-allowed; }
-
-/* ── Platforms ───────────────────────────────────────────────── */
+.btn-fetch:hover { background:var(--primary-dark); }
+.btn-fetch:disabled { opacity:.6; cursor:not-allowed; }
 .platforms {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: center;
-    margin-top: 22px;
+    display:flex; flex-wrap:wrap; gap:8px;
+    justify-content:center; margin-top:22px;
 }
 .platforms span {
-    background: #eef2ff;
-    color: #3730a3;
-    padding: 5px 13px;
-    border-radius: 20px;
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
+    background:#1f2937; color:#c7d2fe;
+    padding:5px 13px; border-radius:20px; font-size:12px;
+    display:flex; align-items:center; gap:5px;
 }
-body.dark .platforms span {
-    background: #1f2937;
-    color: #c7d2fe;
-}
+.info-note { margin-top:14px; font-size:12.5px; color:var(--muted); }
 
-.info-note {
-    margin-top: 14px;
-    font-size: 12.5px;
-    color: var(--muted);
-}
-
-/* ── Status panel ────────────────────────────────────────────── */
+/* ── Status panel ── */
 .status-panel {
-    margin-top: 22px;
-    border-radius: var(--radius);
-    border: 1.5px solid var(--border);
-    background: var(--card-bg);
-    overflow: hidden;
-    display: none;           /* shown via JS */
-    transition: background .3s, border-color .3s;
+    margin-top:22px; border-radius:var(--radius);
+    border:1.5px solid var(--border); background:var(--card-bg);
+    overflow:hidden; display:none;
 }
-
-.status-panel.visible { display: block; }
-
+.status-panel.visible { display:block; }
 .panel-header {
-    padding: 14px 20px;
-    font-size: 13px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border-bottom: 1px solid var(--border);
-    background: rgba(22,163,74,.06);
-    color: var(--primary);
+    padding:14px 20px; font-size:13px; font-weight:600;
+    display:flex; align-items:center; gap:8px;
+    border-bottom:1px solid var(--border);
+    background:rgba(22,163,74,.06); color:var(--primary);
 }
-
-.panel-body { padding: 20px; }
-
-/* Video meta row */
-.meta-row {
-    display: flex;
-    gap: 14px;
-    align-items: flex-start;
-    margin-bottom: 18px;
-    display: none;
-}
-.meta-row.visible { display: flex; }
-
+.panel-body { padding:20px; }
+.meta-row { display:none; gap:14px; align-items:flex-start; margin-bottom:18px; }
+.meta-row.visible { display:flex; }
 .thumb-wrap {
-    width: 110px;
-    min-width: 110px;
-    height: 70px;
-    border-radius: 8px;
-    overflow: hidden;
-    background: var(--border);
-    flex-shrink: 0;
+    width:110px; min-width:110px; height:70px;
+    border-radius:8px; overflow:hidden; background:var(--border); flex-shrink:0;
 }
-.thumb-wrap img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
+.thumb-wrap img { width:100%; height:100%; object-fit:cover; }
 .video-title {
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 1.4;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
+    font-size:14px; font-weight:600; line-height:1.4;
+    overflow:hidden; display:-webkit-box;
+    -webkit-line-clamp:3; -webkit-box-orient:vertical;
 }
-
-/* Progress bar */
-.progress-track {
-    background: var(--border);
-    border-radius: 50px;
-    height: 10px;
-    overflow: hidden;
-    margin-bottom: 10px;
-}
-.progress-fill {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, var(--primary), #22c55e);
-    border-radius: 50px;
-    transition: width .4s ease;
-}
-
-/* Stats row */
-.dl-stats {
-    display: flex;
-    gap: 18px;
-    font-size: 12.5px;
-    color: var(--muted);
-    margin-bottom: 14px;
-    flex-wrap: wrap;
-}
-.dl-stats span { display: flex; align-items: center; gap: 5px; }
-.dl-stats b { color: var(--text); }
-
-/* Status label */
 .status-label {
-    font-size: 13.5px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    margin-bottom: 6px;
+    font-size:13.5px; font-weight:600;
+    display:flex; align-items:center; gap:7px; margin-bottom:10px;
 }
-.status-label.queued   { color: #6b7280; }
-.status-label.fetching { color: #2563eb; }
-.status-label.downloading { color: var(--primary); }
-.status-label.processing  { color: #d97706; }
-.status-label.done     { color: var(--primary); }
-.status-label.error    { color: #ef4444; }
+.status-label.queued    { color:#6b7280; }
+.status-label.fetching  { color:#2563eb; }
+.status-label.done      { color:var(--primary); }
+.status-label.error     { color:#ef4444; }
 
-/* Download button */
+/* ── Notice box: client-side download info ── */
+.notice-box {
+    display:none; margin-bottom:14px; padding:11px 14px;
+    border-radius:10px; background:rgba(22,163,74,.08);
+    border:1px solid rgba(22,163,74,.25);
+    font-size:12.5px; color:#86efac; line-height:1.6;
+}
+.notice-box.visible { display:block; }
+
+/* ── Download button ── */
 .btn-download {
-    display: none;
-    width: 100%;
-    margin-top: 14px;
-    padding: 14px;
-    border: none;
-    border-radius: var(--radius);
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
-    color: #fff;
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-    text-decoration: none;
-    text-align: center;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    transition: transform .2s, opacity .2s;
+    display:none; width:100%; padding:14px; border:none;
+    border-radius:var(--radius);
+    background:linear-gradient(135deg,#2563eb,#1d4ed8);
+    color:#fff; font-size:15px; font-weight:700; cursor:pointer;
+    text-decoration:none; text-align:center;
+    align-items:center; justify-content:center; gap:9px;
+    transition:transform .2s, opacity .2s;
 }
-.btn-download.visible { display: flex; }
-.btn-download:hover   { transform: translateY(-2px); opacity: .92; }
+.btn-download.visible { display:flex; }
+.btn-download:hover { transform:translateY(-2px); opacity:.92; }
 
-/* Error box */
 .error-box {
-    display: none;
-    margin-top: 10px;
-    padding: 12px 15px;
-    border-radius: 10px;
-    background: #fef2f2;
-    border: 1px solid #fca5a5;
-    color: #991b1b;
-    font-size: 13px;
-    line-height: 1.5;
+    display:none; margin-top:10px; padding:12px 15px;
+    border-radius:10px; background:#450a0a;
+    border:1px solid #f87171; color:#fda4af;
+    font-size:13px; line-height:1.5;
 }
-body.dark .error-box {
-    background: #450a0a;
-    border-color: #f87171;
-    color: #fda4af;
+.error-box.visible { display:block; }
+
+footer { text-align:center; padding:20px; font-size:12.5px; color:var(--muted); }
+
+@media (max-width:600px) {
+    .card { padding:28px 20px 24px; }
+    .input-row { flex-direction:column; }
+    .btn-fetch { width:100%; justify-content:center; }
+    .card h1 { font-size:26px; }
 }
-.error-box.visible { display: block; }
-
-/* ── Footer ──────────────────────────────────────────────────── */
-footer {
-    text-align: center;
-    padding: 20px;
-    font-size: 12.5px;
-    color: var(--muted);
-}
-
-/* ── Responsive ──────────────────────────────────────────────── */
-@media (max-width: 600px) {
-    .card { padding: 28px 20px 24px; }
-    .input-row { flex-direction: column; }
-    .btn-fetch { width: 100%; justify-content: center; }
-    .card h1 { font-size: 26px; }
-}
-
-/* spin animation */
-@keyframes spin { to { transform: rotate(360deg); } }
-.fa-spin { animation: spin .8s linear infinite; }
-
-/* pulse for "done" icon */
-@keyframes pop { 0%,100%{transform:scale(1)} 50%{transform:scale(1.3)} }
-.pop { animation: pop .4s ease; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.fa-spin { animation:spin .8s linear infinite; }
 </style>
 </head>
+<body>
 
-<body class="dark">
-
-<!-- ── Header ─────────────────────────────── -->
 <header>
     <div class="logo">
         <i class="fas fa-cloud-download-alt"></i>
         VideoDL — Fast &amp; Free Downloader
     </div>
-    <button class="theme-btn" onclick="toggleTheme()" aria-label="Toggle theme" style="display:none">
-        <i id="theme-icon" class="fas fa-sun"></i>
-    </button>
 </header>
 
-<!-- ── Main ───────────────────────────────── -->
 <div class="wrapper">
-    <div class="container">
+  <div class="container">
 
-        <!-- Hero card -->
-        <div class="card">
-            <h1>Download Videos Instantly</h1>
-            <!-- <p class="subtitle">Supports YouTube, Facebook, Instagram, TikTok &amp; 1000+ platforms</p> -->
-            <p class="subtitle">Supports Facebook, Instagram, TikTok &amp; 1000+ platforms</p>
-            <form id="dlForm" onsubmit="handleSubmit(event)">
-                <div class="input-row">
-                    <input
-                        type="url"
-                        id="urlInput"
-                        name="url"
-                        placeholder="Paste video URL — e.g. https://www.facebook.com/reel/1128972862681458"
-                        required
-                        autocomplete="off"
-                    >
-                    <button class="btn-fetch" id="fetchBtn" type="submit">
-                        <i class="fas fa-download"></i>
-                        <span id="fetchLabel">Download</span>
-                    </button>
-                </div>
-            </form>
+    <div class="card">
+        <h1>Download Videos Instantly</h1>
+        <p class="subtitle">Supports YouTube, Facebook, Instagram, TikTok &amp; 1000+ platforms</p>
 
-            <p class="info-note">
-                <i class="fas fa-lock" style="color:var(--primary);margin-right:4px;"></i>
-                No login required &nbsp;·&nbsp; Fast processing &nbsp;·&nbsp; High quality downloads
-            </p>
-
-            <div class="platforms">
-                <!-- <span><i class="fab fa-youtube"></i> YouTube</span> -->
-                <span><i class="fab fa-facebook"></i> Facebook</span>
-                <span><i class="fab fa-instagram"></i> Instagram</span>
-                <span><i class="fab fa-tiktok"></i> TikTok</span>
-                <span><i class="fab fa-twitter"></i> Twitter / X</span>
-                <span><i class="fas fa-globe"></i> 1000+ Sites</span>
+        <form id="dlForm" onsubmit="handleSubmit(event)">
+            <div class="input-row">
+                <input type="url" id="urlInput" name="url"
+                    placeholder="Paste video URL — e.g. https://youtu.be/dQw4w9WgXcQ"
+                    required autocomplete="off">
+                <button class="btn-fetch" id="fetchBtn" type="submit">
+                    <i class="fas fa-search"></i>
+                    <span id="fetchLabel">Fetch</span>
+                </button>
             </div>
+        </form>
+
+        <p class="info-note">
+            <i class="fas fa-bolt" style="color:var(--primary);margin-right:4px;"></i>
+            No server storage &nbsp;·&nbsp; Direct browser download &nbsp;·&nbsp; High quality
+        </p>
+        <div class="platforms">
+            <span><i class="fab fa-youtube"></i> YouTube</span>
+            <span><i class="fab fa-facebook"></i> Facebook</span>
+            <span><i class="fab fa-instagram"></i> Instagram</span>
+            <span><i class="fab fa-tiktok"></i> TikTok</span>
+            <span><i class="fab fa-twitter"></i> Twitter / X</span>
+            <span><i class="fas fa-globe"></i> 1000+ Sites</span>
         </div>
-
-        <!-- ── Status panel (below card, above footer) ── -->
-        <div class="status-panel" id="statusPanel">
-            <div class="panel-header">
-                <i class="fas fa-satellite-dish"></i>
-                Download Status
-            </div>
-            <div class="panel-body">
-
-                <!-- Video meta (thumbnail + title) -->
-                <div class="meta-row" id="metaRow">
-                    <div class="thumb-wrap">
-                        <img id="thumbImg" src="" alt="thumbnail">
-                    </div>
-                    <div class="video-title" id="videoTitle"></div>
-                </div>
-
-                <!-- Status label -->
-                <div class="status-label" id="statusLabel">
-                    <i id="statusIcon" class="fas fa-hourglass-half"></i>
-                    <span id="statusText">Initialising…</span>
-                </div>
-
-                <!-- Progress bar -->
-                <div class="progress-track">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-
-                <!-- Stats row -->
-                <div class="dl-stats" id="dlStats">
-                    <span><i class="fas fa-percent"></i> <b id="statPct">0%</b></span>
-                    <span><i class="fas fa-tachometer-alt"></i> <b id="statSpeed">—</b></span>
-                    <span><i class="fas fa-clock"></i> ETA <b id="statEta">—</b></span>
-                    <span><i class="fas fa-hdd"></i> <b id="statSize">—</b></span>
-                </div>
-
-                <!-- Error -->
-                <div class="error-box" id="errorBox"></div>
-
-                <!-- Download button (appears when done) -->
-                <a class="btn-download" id="dlBtn" href="#" download>
-                    <i class="fas fa-file-download"></i>
-                    Save Video to Device
-                </a>
-
-            </div>
-        </div>
-
     </div>
+
+    <!-- Status panel -->
+    <div class="status-panel" id="statusPanel">
+        <div class="panel-header">
+            <i class="fas fa-satellite-dish"></i> Download Status
+        </div>
+        <div class="panel-body">
+
+            <div class="meta-row" id="metaRow">
+                <div class="thumb-wrap"><img id="thumbImg" src="" alt="thumbnail"></div>
+                <div class="video-title" id="videoTitle"></div>
+            </div>
+
+            <div class="status-label" id="statusLabel">
+                <i id="statusIcon" class="fas fa-hourglass-half"></i>
+                <span id="statusText">Initialising…</span>
+            </div>
+
+            <!-- Explains to user that download is browser-direct -->
+            <div class="notice-box" id="noticeBox">
+                <i class="fas fa-info-circle"></i>
+                &nbsp;The video URL has been resolved. Your browser will download the file
+                directly from the source — <strong>nothing is stored on our server.</strong>
+                Click the button below to start saving.
+            </div>
+
+            <div class="error-box" id="errorBox"></div>
+
+            <a class="btn-download" id="dlBtn" href="#" target="_blank" rel="noopener">
+                <i class="fas fa-file-download"></i>
+                Save Video to Device
+            </a>
+
+        </div>
+    </div>
+
+  </div>
 </div>
 
-<!-- ── Footer ──────────────────────────────── -->
-<footer>
-    © 2026 VideoDL &nbsp;·&nbsp; Built with FastAPI &nbsp;·&nbsp; Mostafizur Rahaman (ESE, KUET)
-</footer>
+<footer>© 2026 VideoDL &nbsp;·&nbsp; Built with FastAPI &amp; yt-dlp &nbsp;·&nbsp; Mostafizur Rahaman</footer>
 
 <script>
-// ── Theme (dark only) ────────────────────────────
-document.body.classList.add('dark');
-
-
-// ── DOM refs ─────────────────────────────────────
 const dlForm     = document.getElementById('dlForm');
 const urlInput   = document.getElementById('urlInput');
 const fetchBtn   = document.getElementById('fetchBtn');
 const fetchLabel = document.getElementById('fetchLabel');
-
 const statusPanel = document.getElementById('statusPanel');
-const metaRow     = document.getElementById('metaRow');
-const thumbImg    = document.getElementById('thumbImg');
-const videoTitle  = document.getElementById('videoTitle');
+const metaRow    = document.getElementById('metaRow');
+const thumbImg   = document.getElementById('thumbImg');
+const videoTitle = document.getElementById('videoTitle');
 const statusLabel = document.getElementById('statusLabel');
-const statusIcon  = document.getElementById('statusIcon');
-const statusText  = document.getElementById('statusText');
-const progressFill = document.getElementById('progressFill');
-const statPct     = document.getElementById('statPct');
-const statSpeed   = document.getElementById('statSpeed');
-const statEta     = document.getElementById('statEta');
-const statSize    = document.getElementById('statSize');
-const errorBox    = document.getElementById('errorBox');
-const dlBtn       = document.getElementById('dlBtn');
+const statusIcon = document.getElementById('statusIcon');
+const statusText = document.getElementById('statusText');
+const noticeBox  = document.getElementById('noticeBox');
+const errorBox   = document.getElementById('errorBox');
+const dlBtn      = document.getElementById('dlBtn');
 
+let pollTimer    = null;
 
-// ── State ─────────────────────────────────────────
-let pollTimer = null;
-let currentJobId = null;
-
-
-// ── Submit handler ────────────────────────────────
 async function handleSubmit(e) {
     e.preventDefault();
     const url = urlInput.value.trim();
     if (!url) return;
 
-    // Reset UI
     clearPoll();
     resetPanel();
     showPanel();
-
-    // Lock button
-    setFetchBusy(true);
-    setStatus('queued', 'hourglass-half', 'Queuing download…');
+    setBusy(true);
+    setStatus('fetching', 'spinner fa-spin', 'Resolving video URL…');
 
     try {
         const fd = new FormData();
         fd.append('url', url);
-
-        const res  = await fetch('/start-download', { method: 'POST', body: fd });
+        const res  = await fetch('/start-download', { method:'POST', body:fd });
         const data = await res.json();
-
-        if (!res.ok || data.error) {
-            throw new Error(data.error || 'Failed to start download');
-        }
-
-        currentJobId = data.job_id;
-        pollStatus(currentJobId);
-
-    } catch (err) {
+        if (!res.ok || data.error) throw new Error(data.error || 'Failed to start');
+        pollStatus(data.job_id);
+    } catch(err) {
         showError(err.message);
-        setFetchBusy(false);
+        setBusy(false);
     }
 }
 
-
-// ── Polling ───────────────────────────────────────
 function pollStatus(jobId) {
     pollTimer = setInterval(async () => {
         try {
             const res  = await fetch(`/status/${jobId}`);
             const data = await res.json();
-            updatePanel(data, jobId);
-        } catch (_) { /* network hiccup — keep polling */ }
+            updatePanel(data);
+        } catch(_) {}
     }, 800);
 }
 
@@ -554,113 +302,72 @@ function clearPoll() {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
+function updatePanel(data) {
+    const { status, title, thumbnail, download_url, filename, error } = data;
 
-// ── Update panel from job data ────────────────────
-function updatePanel(data, jobId) {
-    const { status, progress, speed, eta, title, thumbnail, error, filesize } = data;
-
-    // Show thumbnail + title once we have them
     if (title) {
         videoTitle.textContent = title;
         if (thumbnail) thumbImg.src = thumbnail;
         metaRow.classList.add('visible');
     }
 
-    // Update file size whenever available
-    if (filesize) statSize.textContent = filesize;
+    if (status === 'fetching_info' || status === 'queued') {
+        setStatus('fetching', 'spinner fa-spin', 'Resolving video URL…');
+        return;
+    }
 
-    switch (status) {
-        case 'queued':
-            setStatus('queued', 'hourglass-half', 'Queued — waiting to start…');
-            break;
+    if (status === 'done' && download_url) {
+        clearPoll();
+        setStatus('done', 'check-circle', 'URL resolved! ✓');
+        noticeBox.classList.add('visible');
 
-        case 'fetching_info':
-            setStatus('fetching', 'spinner fa-spin', 'Fetching video info…');
-            break;
+        // Point directly at the CDN URL — browser downloads it natively
+        dlBtn.href = download_url;
+        dlBtn.setAttribute('download', filename || 'video.mp4');
+        dlBtn.classList.add('visible');
+        setBusy(false);
+        return;
+    }
 
-        case 'downloading':
-            setStatus('downloading', 'cloud-download-alt', `Downloading… ${progress}%`);
-            setProgress(progress);
-            statPct.textContent   = progress + '%';
-            statSpeed.textContent = speed || '—';
-            statEta.textContent   = eta   || '—';
-            break;
-
-        case 'processing':
-            setStatus('processing', 'cog fa-spin', 'Merging video & audio streams…');
-            setProgress(100);
-            statPct.textContent = '100%';
-            break;
-
-        case 'done':
-            clearPoll();
-            setStatus('done', 'check-circle pop', 'Download complete! ✓');
-            setProgress(100);
-            statPct.textContent   = '100%';
-            statSpeed.textContent = '—';
-            statEta.textContent   = '0s';
-            if (filesize) statSize.textContent = filesize;
-            // Show download button
-            dlBtn.href = `/file/${jobId}`;
-            dlBtn.classList.add('visible');
-            setFetchBusy(false);
-            break;
-
-        case 'error':
-            clearPoll();
-            showError(error || 'An unknown error occurred.');
-            setFetchBusy(false);
-            break;
+    if (status === 'error') {
+        clearPoll();
+        showError(error || 'Unknown error occurred.');
+        setBusy(false);
     }
 }
 
-
-// ── Helpers ───────────────────────────────────────
 function setStatus(cls, icon, text) {
-    statusLabel.className = `status-label ${cls}`;
-    statusIcon.className  = `fas fa-${icon}`;
-    statusText.textContent = text;
+    statusLabel.className   = `status-label ${cls}`;
+    statusIcon.className    = `fas fa-${icon}`;
+    statusText.textContent  = text;
 }
-
-function setProgress(pct) {
-    progressFill.style.width = Math.min(pct, 100) + '%';
-}
-
 function showError(msg) {
-    setStatus('error', 'exclamation-triangle', 'Download failed');
+    setStatus('error', 'exclamation-triangle', 'Failed to resolve URL');
     errorBox.textContent = msg;
     errorBox.classList.add('visible');
 }
-
 function showPanel() {
     statusPanel.classList.add('visible');
-    // smooth scroll into view
-    setTimeout(() => statusPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+    setTimeout(() => statusPanel.scrollIntoView({ behavior:'smooth', block:'nearest' }), 100);
 }
-
 function resetPanel() {
     metaRow.classList.remove('visible');
     thumbImg.src = '';
     videoTitle.textContent = '';
     setStatus('queued', 'hourglass-half', 'Initialising…');
-    setProgress(0);
-    statPct.textContent   = '0%';
-    statSpeed.textContent = '—';
-    statEta.textContent   = '—';
-    statSize.textContent  = '—';
-    errorBox.textContent  = '';
+    noticeBox.classList.remove('visible');
+    errorBox.textContent = '';
     errorBox.classList.remove('visible');
     dlBtn.classList.remove('visible');
     dlBtn.href = '#';
 }
-
-function setFetchBusy(busy) {
-    fetchBtn.disabled = busy;
-    fetchLabel.textContent = busy ? 'Processing…' : 'Download';
-    const icon = fetchBtn.querySelector('i');
-    icon.className = busy ? 'fas fa-spinner fa-spin' : 'fas fa-download';
+function setBusy(busy) {
+    fetchBtn.disabled      = busy;
+    fetchLabel.textContent = busy ? 'Resolving…' : 'Fetch';
+    fetchBtn.querySelector('i').className = busy
+        ? 'fas fa-spinner fa-spin'
+        : 'fas fa-search';
 }
 </script>
-
 </body>
 </html>
