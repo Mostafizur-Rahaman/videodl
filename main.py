@@ -386,3 +386,6 @@ def download_video(job_id: str, url: str):
                 "progress":   0,
                 "_marked_at": time.time(),
             })
+
+
+            
