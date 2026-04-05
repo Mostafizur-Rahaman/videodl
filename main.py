@@ -24,16 +24,18 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 # Resolve bgutil server.js path (Dockerfile writes it to /bgutil_path.txt)
 # ─────────────────────────────────────────────────────────────
 def _resolve_bgutil_path() -> str:
-    # Primary: cloned + compiled by Dockerfile
-    candidates = [
-        "/bgutil/build/server.js",
-        # fallbacks just in case
-        "/usr/local/lib/node_modules/@ybd-project/bgutil-ytdlp-pot-provider/build/server.js",
-        "/usr/lib/node_modules/bgutil-ytdlp-pot-provider/build/server.js",
-    ]
-    for p in candidates:
-        if os.path.exists(p):
+    # Written by Dockerfile after build: contains exact path to compiled server.js
+    if os.path.exists("/bgutil_server_path.txt"):
+        p = open("/bgutil_server_path.txt").read().strip()
+        if p and os.path.exists(p):
             return p
+    # Fallback: scan the cloned repo
+    for root, _, files in os.walk("/bgutil"):
+        if "node_modules" in root:
+            continue
+        for f in files:
+            if f == "server.js" and "build" in root:
+                return os.path.join(root, f)
     return ""
 
 # ─────────────────────────────────────────────────────────────

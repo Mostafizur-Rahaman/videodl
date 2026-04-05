@@ -9,12 +9,16 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# ── Clone + build bgutil PO token server ─────────────────────
-# This TypeScript project must be compiled before it can run
+# ── Clone bgutil + auto-find package.json + build ────────────
 RUN git clone --depth=1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /bgutil
-WORKDIR /bgutil
-RUN npm install && npm run build
-WORKDIR /app
+
+RUN PKG_DIR=$(dirname "$(find /bgutil -name 'package.json' -not -path '*/node_modules/*' | head -1)") && \
+    echo "==> Building from: $PKG_DIR" && \
+    cd "$PKG_DIR" && \
+    npm install && \
+    npm run build && \
+    find "$PKG_DIR" -name "server.js" -path "*/build/*" | head -1 > /bgutil_server_path.txt && \
+    echo "==> Server JS:" && cat /bgutil_server_path.txt
 
 # ── Python deps ───────────────────────────────────────────────
 COPY requirements.txt .
