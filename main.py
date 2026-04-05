@@ -24,18 +24,32 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 # Resolve bgutil server.js path (Dockerfile writes it to /bgutil_path.txt)
 # ─────────────────────────────────────────────────────────────
 def _resolve_bgutil_path() -> str:
-    # Written by Dockerfile after build: contains exact path to compiled server.js
-    if os.path.exists("/bgutil_server_path.txt"):
-        p = open("/bgutil_server_path.txt").read().strip()
-        if p and os.path.exists(p):
+    """Find the bgutil server entry point — it's plain JS, no build needed."""
+    server_dir = "/bgutil/server"
+    if not os.path.isdir(server_dir):
+        return ""
+
+    # Read entry point from package.json
+    pkg = os.path.join(server_dir, "package.json")
+    if os.path.exists(pkg):
+        import json
+        try:
+            data = json.load(open(pkg))
+            # Try main field, then scripts.start, then common names
+            main = data.get("main", "")
+            if main:
+                p = os.path.join(server_dir, main)
+                if os.path.exists(p):
+                    return p
+        except Exception:
+            pass
+
+    # Fallback: look for common entry point filenames
+    for name in ("server.js", "index.js", "app.js"):
+        p = os.path.join(server_dir, name)
+        if os.path.exists(p):
             return p
-    # Fallback: scan the cloned repo
-    for root, _, files in os.walk("/bgutil"):
-        if "node_modules" in root:
-            continue
-        for f in files:
-            if f == "server.js" and "build" in root:
-                return os.path.join(root, f)
+
     return ""
 
 # ─────────────────────────────────────────────────────────────
@@ -52,6 +66,7 @@ def _start_bgutil():
     try:
         _bgutil_proc = subprocess.Popen(
             ["node", server_js, "--port", str(BGUTIL_PORT)],
+            cwd=os.path.dirname(server_js),  # run from server dir so relative requires work
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
