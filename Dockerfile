@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install ffmpeg + Node.js
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg curl gnupg && \
+    apt-get install -y --no-install-recommends ffmpeg curl gnupg git && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
