@@ -13,7 +13,7 @@ RUN apt-get update && \
 # This TypeScript project must be compiled before it can run
 RUN git clone --depth=1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /bgutil
 WORKDIR /bgutil
-RUN npm ci && npm run build
+RUN npm install && npm run build
 WORKDIR /app
 
 # ── Python deps ───────────────────────────────────────────────
