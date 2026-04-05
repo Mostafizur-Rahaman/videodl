@@ -18,32 +18,26 @@ COOKIES_FILE = "youtube_cookies.txt"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────
-# Cookies bootstrap — reads YOUTUBE_COOKIES env var (Railway Variable)
-# Value can be raw Netscape cookies.txt content OR base64-encoded
+# Optional cookies bootstrap (still helps, but not required now)
 # ─────────────────────────────────────────────────────────────
-
 _COOKIES_STATUS = {"loaded": False, "lines": 0, "size": 0, "error": ""}
 
 def _bootstrap_cookies() -> None:
     raw = os.environ.get("YOUTUBE_COOKIES", "").strip()
     if not raw:
-        _COOKIES_STATUS["error"] = "YOUTUBE_COOKIES env var not set"
+        _COOKIES_STATUS["error"] = "YOUTUBE_COOKIES not set (optional)"
         return
     try:
         decoded = base64.b64decode(raw).decode("utf-8")
     except Exception:
-        decoded = raw   # not base64, use as-is
+        decoded = raw
 
-    # Validate it looks like Netscape cookie format
-    lines = [l for l in decoded.splitlines() if l.strip()]
-    has_header = any("Netscape" in l or l.startswith("#") for l in lines[:3])
+    lines        = [l for l in decoded.splitlines() if l.strip()]
+    has_header   = any("Netscape" in l or l.startswith("#") for l in lines[:3])
     cookie_lines = [l for l in lines if not l.startswith("#") and "\t" in l]
 
     if not cookie_lines:
-        _COOKIES_STATUS["error"] = (
-            "Cookies file has no valid Netscape entries (tab-separated rows). "
-            "Make sure you exported from a LOGGED-IN YouTube session."
-        )
+        _COOKIES_STATUS["error"] = "No valid Netscape cookie entries found."
         return
 
     with open(COOKIES_FILE, "w", encoding="utf-8") as f:
@@ -57,8 +51,7 @@ def _bootstrap_cookies() -> None:
         "size":   os.path.getsize(COOKIES_FILE),
         "error":  "",
     })
-    print(f"[VideoDL] ✓ cookies loaded — {len(cookie_lines)} entries, "
-          f"{_COOKIES_STATUS['size']} bytes")
+    print(f"[VideoDL] ✓ cookies loaded — {len(cookie_lines)} entries")
 
 _bootstrap_cookies()
 
@@ -142,13 +135,12 @@ async def home(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
 
-# ── Debug endpoint — visit /cookies-status to verify cookies ──
 @app.get("/cookies-status")
 async def cookies_status():
     return JSONResponse({
-        "cookies_file": COOKIES_FILE,
-        "status":       _COOKIES_STATUS,
+        "cookies":        _COOKIES_STATUS,
         "yt_dlp_version": yt_dlp.version.__version__,
+        "pot_plugin":     "bgutil-ytdlp-pot-provider (auto)",
     })
 
 
@@ -269,12 +261,11 @@ def download_video(job_id: str, url: str):
         "restrictfilenames":   True,
         "overwrites":          False,
         "http_headers":        _HEADERS,
+        # bgutil plugin auto-provides PO token — no manual config needed
+        # tv_embedded works for most videos; ios is the reliable fallback
         "extractor_args": {
             "youtube": {
-                # tv_embedded + mweb support separate streams (bestvideo+bestaudio)
-                # ios is pre-merged but never triggers bot-check
-                # web_creator sometimes works with cookies on fresh IPs
-                "player_client": ["tv_embedded", "mweb", "ios"],
+                "player_client": ["tv_embedded", "ios"],
             }
         },
         **_cookies_opts(),
