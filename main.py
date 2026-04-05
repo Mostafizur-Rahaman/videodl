@@ -24,18 +24,16 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 # Resolve bgutil server.js path (Dockerfile writes it to /bgutil_path.txt)
 # ─────────────────────────────────────────────────────────────
 def _resolve_bgutil_path() -> str:
-    # Written by Dockerfile: node -e "console.log(...)" > /bgutil_path.txt
-    if os.path.exists("/bgutil_path.txt"):
-        p = open("/bgutil_path.txt").read().strip()
+    # Primary: cloned + compiled by Dockerfile
+    candidates = [
+        "/bgutil/build/server.js",
+        # fallbacks just in case
+        "/usr/local/lib/node_modules/@ybd-project/bgutil-ytdlp-pot-provider/build/server.js",
+        "/usr/lib/node_modules/bgutil-ytdlp-pot-provider/build/server.js",
+    ]
+    for p in candidates:
         if os.path.exists(p):
             return p
-    # Common fallback locations
-    for candidate in [
-        "/usr/local/lib/node_modules/@ybd-project/bgutil-ytdlp-pot-provider/build/server.js",
-        "/usr/lib/node_modules/@ybd-project/bgutil-ytdlp-pot-provider/build/server.js",
-    ]:
-        if os.path.exists(candidate):
-            return candidate
     return ""
 
 # ─────────────────────────────────────────────────────────────

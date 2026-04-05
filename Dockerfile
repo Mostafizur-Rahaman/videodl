@@ -2,32 +2,30 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install ffmpeg + Node.js
+# ── System deps: ffmpeg + Node.js + git ──────────────────────
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg curl gnupg git && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install bgutil PO token server from GitHub (correct source)
-RUN npm install -g https://github.com/Brainicism/bgutil-ytdlp-pot-provider
+# ── Clone + build bgutil PO token server ─────────────────────
+# This TypeScript project must be compiled before it can run
+RUN git clone --depth=1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /bgutil
+WORKDIR /bgutil
+RUN npm ci && npm run build
+WORKDIR /app
 
-# Write the server.js path so Python can find it at runtime
-RUN node -e "const p=require.resolve('bgutil-ytdlp-pot-provider/build/server.js'); console.log(p);" > /bgutil_path.txt 2>/dev/null || \
-    find /usr/local/lib/node_modules /usr/lib/node_modules -name "server.js" -path "*/bgutil*" 2>/dev/null | head -1 > /bgutil_path.txt
-RUN echo "bgutil path:" && cat /bgutil_path.txt
-
-# Install Python dependencies
+# ── Python deps ───────────────────────────────────────────────
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install yt-dlp-get-pot plugin (bridges yt-dlp ↔ bgutil server)
+# ── yt-dlp-get-pot: bridges yt-dlp ↔ bgutil server ──────────
 RUN pip install --no-cache-dir yt-dlp-get-pot
 
-# Copy app source
+# ── App source ────────────────────────────────────────────────
 COPY main.py .
 COPY templates/ templates/
-
 RUN mkdir -p downloads
 
 EXPOSE 8000
