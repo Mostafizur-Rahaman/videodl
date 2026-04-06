@@ -2,13 +2,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 import yt_dlp
-import uuid
-import os
-import base64
-import shutil
-import time
-import subprocess
-import socket
+from pytubefix import YouTube
+from pytubefix.exceptions import VideoUnavailable, AgeRestrictedError
+import uuid, os, base64, shutil, time
 from typing import Dict
 import threading
 
@@ -17,83 +13,10 @@ templates = Jinja2Templates(directory="templates")
 
 DOWNLOAD_DIR = "downloads"
 COOKIES_FILE = "youtube_cookies.txt"
-BGUTIL_PORT  = 4416
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────
-# Resolve bgutil server.js path (Dockerfile writes it to /bgutil_path.txt)
-# ─────────────────────────────────────────────────────────────
-def _resolve_bgutil_path() -> str:
-    """Find the bgutil server entry point — it's plain JS, no build needed."""
-    server_dir = "/bgutil/server"
-    if not os.path.isdir(server_dir):
-        return ""
-
-    # Read entry point from package.json
-    pkg = os.path.join(server_dir, "package.json")
-    if os.path.exists(pkg):
-        import json
-        try:
-            data = json.load(open(pkg))
-            # Try main field, then scripts.start, then common names
-            main = data.get("main", "")
-            if main:
-                p = os.path.join(server_dir, main)
-                if os.path.exists(p):
-                    return p
-        except Exception:
-            pass
-
-    # Fallback: look for common entry point filenames
-    for name in ("server.js", "index.js", "app.js"):
-        p = os.path.join(server_dir, name)
-        if os.path.exists(p):
-            return p
-
-    return ""
-
-# ─────────────────────────────────────────────────────────────
-# Start bgutil PO-token server
-# ─────────────────────────────────────────────────────────────
-_bgutil_proc = None
-
-def _start_bgutil():
-    global _bgutil_proc
-    server_js = _resolve_bgutil_path()
-    if not server_js:
-        print("[VideoDL] ⚠ bgutil server.js not found — YouTube may be blocked")
-        return
-    try:
-        _bgutil_proc = subprocess.Popen(
-            ["node", server_js, "--port", str(BGUTIL_PORT)],
-            cwd=os.path.dirname(server_js),  # run from server dir so relative requires work
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        # Wait up to 15s for it to be ready
-        for _ in range(30):
-            try:
-                with socket.create_connection(("127.0.0.1", BGUTIL_PORT), timeout=0.5):
-                    print(f"[VideoDL] ✓ bgutil PO-token server ready on :{BGUTIL_PORT}")
-                    return
-            except OSError:
-                time.sleep(0.5)
-        print("[VideoDL] ⚠ bgutil server did not become ready in time")
-    except Exception as e:
-        print(f"[VideoDL] ⚠ bgutil failed to start: {e}")
-
-threading.Thread(target=_start_bgutil, daemon=True).start()
-
-def _bgutil_running() -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", BGUTIL_PORT), timeout=0.3):
-            return True
-    except OSError:
-        return False
-
-
-# ─────────────────────────────────────────────────────────────
-# Optional cookies bootstrap
+# Optional cookies bootstrap (helps pytubefix with age-restricted)
 # ─────────────────────────────────────────────────────────────
 _COOKIES_STATUS = {"loaded": False, "lines": 0, "size": 0, "error": ""}
 
@@ -110,7 +33,7 @@ def _bootstrap_cookies() -> None:
     has_header   = any("Netscape" in l or l.startswith("#") for l in lines[:3])
     cookie_lines = [l for l in lines if not l.startswith("#") and "\t" in l]
     if not cookie_lines:
-        _COOKIES_STATUS["error"] = "No valid Netscape cookie entries found."
+        _COOKIES_STATUS["error"] = "No valid Netscape cookie entries."
         return
     with open(COOKIES_FILE, "w", encoding="utf-8") as f:
         if not has_header:
@@ -153,22 +76,10 @@ def _purge_job(job_id: str) -> None:
     with _lock:
         jobs.pop(job_id, None)
 
-def _cookies_opts() -> dict:
-    if _COOKIES_STATUS["loaded"] and os.path.exists(COOKIES_FILE):
-        return {"cookiefile": COOKIES_FILE}
-    return {}
-
-def _yt_extractor_args() -> dict:
-    if _bgutil_running():
-        # web client + bgutil PO token = full YouTube access from any IP
-        return {
-            "youtube": {"player_client": ["web"]},
-            "youtubepot-bgutil": {
-                "base_url": [f"http://127.0.0.1:{BGUTIL_PORT}"],
-            },
-        }
-    # Fallback: alternative clients that don't require PO tokens
-    return {"youtube": {"player_client": ["tv_embedded", "ios"]}}
+def _is_youtube(url: str) -> bool:
+    return any(d in url.lower() for d in (
+        "youtube.com", "youtu.be", "youtube-nocookie.com", "music.youtube.com"
+    ))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -211,13 +122,12 @@ threading.Thread(target=_watcher, daemon=True).start()
 async def home(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
-@app.get("/cookies-status")
-async def cookies_status():
+@app.get("/status-check")
+async def status_check():
     return JSONResponse({
         "cookies":        _COOKIES_STATUS,
-        "bgutil_server":  _bgutil_running(),
-        "bgutil_path":    _resolve_bgutil_path(),
         "yt_dlp_version": yt_dlp.version.__version__,
+        "youtube_engine": "pytubefix",
     })
 
 @app.post("/start-download")
@@ -271,22 +181,105 @@ async def serve_file(job_id: str):
 
 
 # ─────────────────────────────────────────────────────────────
-# Download worker
+# YouTube download — pytubefix
+# Gets best video+audio streams, downloads separately, merges with ffmpeg
 # ─────────────────────────────────────────────────────────────
 
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-}
+def _download_youtube(job_id: str, url: str, job_dir: str) -> str:
+    """Download a YouTube video using pytubefix. Returns path to final file."""
 
-def download_video(job_id: str, url: str):
+    def _on_progress(stream, chunk, bytes_remaining):
+        total    = stream.filesize
+        done     = total - bytes_remaining
+        pct      = int(done / total * 100) if total else 0
+        with _lock:
+            jobs[job_id].update({
+                "status":   "downloading",
+                "progress": pct,
+                "speed":    "",
+                "eta":      "",
+                "filesize": human_size(total) if total else "",
+            })
+
+    yt = YouTube(
+        url,
+        on_progress_callback=_on_progress,
+        use_oauth=False,
+        allow_oauth_cache=False,
+    )
+
     with _lock:
-        jobs[job_id]["status"] = "fetching_info"
+        jobs[job_id]["title"]     = yt.title or "video"
+        jobs[job_id]["thumbnail"] = yt.thumbnail_url or ""
+        jobs[job_id]["status"]    = "downloading"
 
+    # ── Try to get best progressive stream first (video+audio in one file) ──
+    progressive = (
+        yt.streams
+          .filter(progressive=True, file_extension="mp4")
+          .order_by("resolution")
+          .last()
+    )
+
+    if progressive:
+        out_path = progressive.download(output_path=job_dir)
+        return out_path
+
+    # ── Fallback: adaptive (separate video + audio), merge with ffmpeg ──
+    video_stream = (
+        yt.streams
+          .filter(adaptive=True, file_extension="mp4", only_video=True)
+          .order_by("resolution")
+          .last()
+    )
+    audio_stream = (
+        yt.streams
+          .filter(adaptive=True, only_audio=True)
+          .order_by("abr")
+          .last()
+    )
+
+    if not video_stream or not audio_stream:
+        raise ValueError("No suitable streams found for this video.")
+
+    video_path = video_stream.download(output_path=job_dir, filename="video_tmp.mp4")
+    audio_path = audio_stream.download(output_path=job_dir, filename="audio_tmp.mp4")
+
+    with _lock:
+        jobs[job_id]["status"]   = "processing"
+        jobs[job_id]["progress"] = 100
+
+    # Merge with ffmpeg
+    safe_title = "".join(
+        c for c in (yt.title or "video")
+        if c.isalnum() or c in " ._-"
+    )[:80].strip() or "video"
+    merged_path = os.path.join(job_dir, f"{safe_title}.mp4")
+
+    ret = os.system(
+        f'ffmpeg -y -i "{video_path}" -i "{audio_path}" '
+        f'-c:v copy -c:a aac "{merged_path}" -loglevel error'
+    )
+
+    # Clean up temp files
+    for p in (video_path, audio_path):
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+
+    if ret != 0 or not os.path.exists(merged_path):
+        raise RuntimeError("ffmpeg merge failed.")
+
+    return merged_path
+
+
+# ─────────────────────────────────────────────────────────────
+# Non-YouTube download — yt-dlp
+# ─────────────────────────────────────────────────────────────
+
+def _download_ytdlp(job_id: str, url: str, job_dir: str) -> str:
+    """Download any non-YouTube URL using yt-dlp. Returns path to final file."""
     final_filepath: list[str] = []
 
     def progress_hook(d):
@@ -311,11 +304,9 @@ def download_video(job_id: str, url: str):
                 jobs[job_id]["status"]   = "processing"
                 jobs[job_id]["progress"] = 100
 
-    job_dir = os.path.join(DOWNLOAD_DIR, job_id)
-    os.makedirs(job_dir, exist_ok=True)
-
-    _base = {
+    ydl_opts = {
         "outtmpl":             os.path.join(job_dir, "%(title).80s.%(ext)s"),
+        "format":              "bestvideo+bestaudio/best",
         "merge_output_format": "mp4",
         "noplaylist":          True,
         "quiet":               True,
@@ -328,20 +319,20 @@ def download_video(job_id: str, url: str):
         "fragment_retries":    5,
         "restrictfilenames":   True,
         "overwrites":          False,
-        "http_headers":        _HEADERS,
-        "extractor_args":      _yt_extractor_args(),
-        **_cookies_opts(),
+        "ignoreerrors":        False,
+        "progress_hooks":      [progress_hook],
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        },
     }
 
-    _info_opts = {**_base, "ignoreerrors": False, "format": "best"}
-    _dl_opts   = {**_base,
-                  "format":         "bestvideo+bestaudio/best",
-                  "ignoreerrors":   True,
-                  "progress_hooks": [progress_hook]}
-
-    try:
-        with yt_dlp.YoutubeDL(_info_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
         if info is None:
             raise ValueError("Could not extract video info — URL may be private or unsupported.")
         if info.get("_type") == "playlist":
@@ -353,19 +344,39 @@ def download_video(job_id: str, url: str):
             jobs[job_id]["title"]     = info.get("title",     "video")
             jobs[job_id]["thumbnail"] = info.get("thumbnail", "")
             jobs[job_id]["status"]    = "downloading"
-        with yt_dlp.YoutubeDL(_dl_opts) as ydl:
-            ydl.download([url])
+        ydl.download([url])
 
-        found = final_filepath[0] if final_filepath else None
-        if not found or not os.path.exists(found):
-            candidates = [
-                os.path.join(job_dir, f) for f in os.listdir(job_dir)
-                if not f.endswith((".part", ".ytdl", ".json"))
-            ]
-            if candidates:
-                found = max(candidates, key=os.path.getsize)
-        if not found or not os.path.exists(found):
-            raise FileNotFoundError("Output file could not be located.")
+    found = final_filepath[0] if final_filepath else None
+    if not found or not os.path.exists(found):
+        candidates = [
+            os.path.join(job_dir, f) for f in os.listdir(job_dir)
+            if not f.endswith((".part", ".ytdl", ".json"))
+        ]
+        if candidates:
+            found = max(candidates, key=os.path.getsize)
+
+    if not found or not os.path.exists(found):
+        raise FileNotFoundError("Output file could not be located.")
+
+    return found
+
+
+# ─────────────────────────────────────────────────────────────
+# Main download dispatcher
+# ─────────────────────────────────────────────────────────────
+
+def download_video(job_id: str, url: str):
+    with _lock:
+        jobs[job_id]["status"] = "fetching_info"
+
+    job_dir = os.path.join(DOWNLOAD_DIR, job_id)
+    os.makedirs(job_dir, exist_ok=True)
+
+    try:
+        if _is_youtube(url):
+            found = _download_youtube(job_id, url, job_dir)
+        else:
+            found = _download_ytdlp(job_id, url, job_dir)
 
         with _lock:
             jobs[job_id].update({
@@ -377,8 +388,18 @@ def download_video(job_id: str, url: str):
                 "_marked_at": time.time(),
             })
 
+    except (VideoUnavailable, AgeRestrictedError) as exc:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        with _lock:
+            jobs[job_id].update({
+                "status":     "error",
+                "error":      f"YouTube error: {exc}",
+                "progress":   0,
+                "_marked_at": time.time(),
+            })
+
     except Exception as exc:
-        shutil.rmtree(os.path.join(DOWNLOAD_DIR, job_id), ignore_errors=True)
+        shutil.rmtree(job_dir, ignore_errors=True)
         with _lock:
             jobs[job_id].update({
                 "status":     "error",
@@ -386,6 +407,3 @@ def download_video(job_id: str, url: str):
                 "progress":   0,
                 "_marked_at": time.time(),
             })
-
-
-            
